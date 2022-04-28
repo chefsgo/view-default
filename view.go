@@ -11,19 +11,20 @@ import (
 	"path/filepath"
 	"strings"
 
-	. "github.com/chef/base"
-	"github.com/chef/chef"
+	. "github.com/chefsgo/base"
+	"github.com/chefsgo/chef"
+	"github.com/chefsgo/view"
 )
 
 type (
-	defaultViewDriver  struct{}
-	defaultViewConnect struct {
-		config chef.ViewConfig
+	defaultDriver  struct{}
+	defaultConnect struct {
+		config view.Config
 	}
 
-	defaultViewParser struct {
-		connect  *defaultViewConnect
-		viewbody chef.ViewBody
+	defaultParser struct {
+		connect  *defaultConnect
+		viewbody view.Body
 
 		engine *template.Template
 		layout string
@@ -37,7 +38,7 @@ type (
 )
 
 //连接
-func (driver *defaultViewDriver) Connect(config chef.ViewConfig) (chef.ViewConnect, error) {
+func (driver *defaultDriver) Connect(config view.Config) (view.Connect, error) {
 	if config.Left == "" {
 		config.Left = "{%"
 	}
@@ -45,33 +46,33 @@ func (driver *defaultViewDriver) Connect(config chef.ViewConfig) (chef.ViewConne
 		config.Right = "%}"
 	}
 	if config.Root == "" {
-		config.Right = "asset/views"
+		config.Right = "views"
 	}
 	if config.Shared == "" {
 		config.Right = "shared"
 	}
-	return &defaultViewConnect{
+	return &defaultConnect{
 		config: config,
 	}, nil
 }
 
 //打开连接
-func (connect *defaultViewConnect) Open() error {
+func (connect *defaultConnect) Open() error {
 	return nil
 }
-func (connect *defaultViewConnect) Health() (chef.ViewHealth, error) {
+func (connect *defaultConnect) Health() (view.Health, error) {
 	// connect.mutex.RLock()
 	// defer connect.mutex.RUnlock()
-	return chef.ViewHealth{Workload: 0}, nil
+	return view.Health{Workload: 0}, nil
 }
 
 //关闭连接
-func (connect *defaultViewConnect) Close() error {
+func (connect *defaultConnect) Close() error {
 	return nil
 }
 
 //解析接口
-func (connect *defaultViewConnect) Parse(body chef.ViewBody) (string, error) {
+func (connect *defaultConnect) Parse(body view.Body) (string, error) {
 	parser := connect.newDefaultViewParser(body)
 	if body, err := parser.Parse(); err != nil {
 		return "", err
@@ -81,8 +82,8 @@ func (connect *defaultViewConnect) Parse(body chef.ViewBody) (string, error) {
 
 }
 
-func (connect *defaultViewConnect) newDefaultViewParser(body chef.ViewBody) *defaultViewParser {
-	parser := &defaultViewParser{
+func (connect *defaultConnect) newDefaultViewParser(body view.Body) *defaultParser {
+	parser := &defaultParser{
 		connect: connect, viewbody: body,
 	}
 
@@ -90,8 +91,6 @@ func (connect *defaultViewConnect) newDefaultViewParser(body chef.ViewBody) *def
 	parser.styles = []string{}
 	parser.scripts = []string{}
 
-	//要包装注册的helper，所以新启一个变量
-	//支持通用的helper类型func(*Context,...Any)(Any)
 	helpers := Map{}
 	for k, v := range body.Helpers {
 		helpers[k] = v
@@ -117,11 +116,11 @@ func (connect *defaultViewConnect) newDefaultViewParser(body chef.ViewBody) *def
 	return parser
 }
 
-func (parser *defaultViewParser) Parse() (string, error) {
+func (parser *defaultParser) Parse() (string, error) {
 	return parser.Layout()
 }
 
-func (parser *defaultViewParser) Layout() (string, error) {
+func (parser *defaultParser) Layout() (string, error) {
 	bodyText, bodyError := parser.Body(parser.viewbody.View)
 	if bodyError != nil {
 		return "", bodyError
@@ -141,7 +140,7 @@ func (parser *defaultViewParser) Layout() (string, error) {
 
 	var viewName, layoutHtml string
 	if strings.Contains(parser.layout, "\n") {
-		viewName = chef.Unique()
+		viewName = chef.Generate()
 		layoutHtml = parser.layout
 	} else {
 
@@ -152,9 +151,9 @@ func (parser *defaultViewParser) Layout() (string, error) {
 		}
 
 		//加入多语言支持
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Lang, parser.layout))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Lang, parser.connect.config.Shared, parser.layout))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Lang, parser.layout))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, parser.layout))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, parser.connect.config.Shared, parser.layout))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, parser.layout))
 
 		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.connect.config.Shared, parser.layout))
 		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.layout))
@@ -210,7 +209,7 @@ func (parser *defaultViewParser) Layout() (string, error) {
 }
 
 /* 返回view */
-func (parser *defaultViewParser) Body(name string, args ...Any) (string, error) {
+func (parser *defaultParser) Body(name string, args ...Any) (string, error) {
 	var bodyModel Any
 	if len(args) > 0 {
 		bodyModel = args[0]
@@ -218,19 +217,19 @@ func (parser *defaultViewParser) Body(name string, args ...Any) (string, error) 
 
 	var viewName, bodyHtml string
 	if strings.Contains(name, "\n") {
-		viewName = chef.Unique()
+		viewName = chef.Generate()
 		bodyHtml = name
 	} else {
 
 		//定义View搜索的路径
 		viewpaths := []string{
 			//加入多语言支持
-			fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Lang, name),
-			fmt.Sprintf("%s/%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.connect.config.Shared, parser.viewbody.Lang, name),
-			fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Lang, name),
-			fmt.Sprintf("%s/%s/%s/index.html", parser.connect.config.Root, parser.viewbody.Lang, name),
-			fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Lang, parser.connect.config.Shared, name),
-			fmt.Sprintf("%s/%s/%s/%s/index.html", parser.connect.config.Root, parser.viewbody.Lang, parser.connect.config.Shared, name),
+			fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, name),
+			fmt.Sprintf("%s/%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.connect.config.Shared, parser.viewbody.Language, name),
+			fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, name),
+			fmt.Sprintf("%s/%s/%s/index.html", parser.connect.config.Root, parser.viewbody.Language, name),
+			fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, parser.connect.config.Shared, name),
+			fmt.Sprintf("%s/%s/%s/%s/index.html", parser.connect.config.Root, parser.viewbody.Language, parser.connect.config.Shared, name),
 
 			fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, name),
 			fmt.Sprintf("%s/%s/%s/index.html", parser.connect.config.Root, parser.viewbody.Site, name),
@@ -292,7 +291,7 @@ func (parser *defaultViewParser) Body(name string, args ...Any) (string, error) 
 }
 
 /* 返回view */
-func (parser *defaultViewParser) Render(name string, args ...Any) (string, error) {
+func (parser *defaultParser) Render(name string, args ...Any) (string, error) {
 
 	var renderModel Any
 	if len(args) > 0 {
@@ -303,7 +302,7 @@ func (parser *defaultViewParser) Render(name string, args ...Any) (string, error
 
 	var viewName, renderHtml string
 	if strings.Contains(name, "\n") {
-		viewName = chef.Unique()
+		viewName = chef.Generate()
 		renderHtml = name
 	} else {
 		//先搜索body所在目录
@@ -312,10 +311,10 @@ func (parser *defaultViewParser) Render(name string, args ...Any) (string, error
 			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s.html", parser.path, name))
 		}
 		//加入多语言支持
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Lang, parser.connect.config.Shared, name))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Lang, name))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Lang, parser.connect.config.Shared, name))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Lang, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, parser.connect.config.Shared, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, parser.connect.config.Shared, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, name))
 
 		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.connect.config.Shared, name))
 		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, name))
@@ -386,7 +385,7 @@ func (parser *defaultViewParser) Render(name string, args ...Any) (string, error
 
 //--------------自带的helper
 
-func (parser *defaultViewParser) layoutHelper(name string, vals ...Any) string {
+func (parser *defaultParser) layoutHelper(name string, vals ...Any) string {
 	args := []Map{}
 	for _, v := range vals {
 		switch t := v.(type) {
@@ -394,7 +393,7 @@ func (parser *defaultViewParser) layoutHelper(name string, vals ...Any) string {
 			args = append(args, t)
 		case string:
 			m := Map{}
-			e := chef.JsonDecode([]byte(t), &m)
+			e := chef.UnmarshalJSON([]byte(t), &m)
 			if e == nil {
 				args = append(args, m)
 			}
@@ -410,7 +409,7 @@ func (parser *defaultViewParser) layoutHelper(name string, vals ...Any) string {
 
 	return ""
 }
-func (parser *defaultViewParser) titleHelper(args ...string) template.HTML {
+func (parser *defaultParser) titleHelper(args ...string) template.HTML {
 	if len(args) > 0 {
 		//设置TITLE
 		parser.title = args[0]
@@ -423,7 +422,7 @@ func (parser *defaultViewParser) titleHelper(args ...string) template.HTML {
 		}
 	}
 }
-func (parser *defaultViewParser) authorHelper(args ...string) template.HTML {
+func (parser *defaultParser) authorHelper(args ...string) template.HTML {
 	if len(args) > 0 {
 		//设置author
 		parser.author = args[0]
@@ -436,7 +435,7 @@ func (parser *defaultViewParser) authorHelper(args ...string) template.HTML {
 		}
 	}
 }
-func (parser *defaultViewParser) keywordsHelper(args ...string) template.HTML {
+func (parser *defaultParser) keywordsHelper(args ...string) template.HTML {
 	if len(args) > 0 {
 		//设置TITLE
 		parser.keywords = args[0]
@@ -449,7 +448,7 @@ func (parser *defaultViewParser) keywordsHelper(args ...string) template.HTML {
 		}
 	}
 }
-func (parser *defaultViewParser) descriptionHelper(args ...string) template.HTML {
+func (parser *defaultParser) descriptionHelper(args ...string) template.HTML {
 	if len(args) > 0 {
 		//设置TITLE
 		parser.description = args[0]
@@ -462,11 +461,11 @@ func (parser *defaultViewParser) descriptionHelper(args ...string) template.HTML
 		}
 	}
 }
-func (parser *defaultViewParser) bodyHelper() template.HTML {
+func (parser *defaultParser) bodyHelper() template.HTML {
 	return template.HTML(parser.body)
 }
 
-func (parser *defaultViewParser) renderHelper(name string, vals ...Any) template.HTML {
+func (parser *defaultParser) renderHelper(name string, vals ...Any) template.HTML {
 	// args := []Map{}
 	// for _, v := range vals {
 	// 	if t, ok := v.(string); ok {
@@ -492,7 +491,7 @@ func (parser *defaultViewParser) renderHelper(name string, vals ...Any) template
 	}
 }
 
-func (parser *defaultViewParser) metaHelper(name, content string, https ...bool) string {
+func (parser *defaultParser) metaHelper(name, content string, https ...bool) string {
 	isHttp := false
 	if len(https) > 0 {
 		isHttp = https[0]
@@ -505,7 +504,7 @@ func (parser *defaultViewParser) metaHelper(name, content string, https ...bool)
 	return ""
 }
 
-func (parser *defaultViewParser) metasHelper() template.HTML {
+func (parser *defaultParser) metasHelper() template.HTML {
 	html := ""
 	if len(parser.metas) > 0 {
 		html = strings.Join(parser.metas, "\n")
@@ -513,7 +512,7 @@ func (parser *defaultViewParser) metasHelper() template.HTML {
 	return template.HTML(html)
 }
 
-func (parser *defaultViewParser) styleHelper(path string, args ...string) string {
+func (parser *defaultParser) styleHelper(path string, args ...string) string {
 	media := ""
 	if len(args) > 0 {
 		media = args[0]
@@ -527,7 +526,7 @@ func (parser *defaultViewParser) styleHelper(path string, args ...string) string
 	return ""
 }
 
-func (parser *defaultViewParser) stylesHelper() template.HTML {
+func (parser *defaultParser) stylesHelper() template.HTML {
 	html := ""
 	if len(parser.styles) > 0 {
 		html = strings.Join(parser.styles, "\n")
@@ -535,7 +534,7 @@ func (parser *defaultViewParser) stylesHelper() template.HTML {
 	return template.HTML(html)
 }
 
-func (parser *defaultViewParser) scriptHelper(path string, args ...string) string {
+func (parser *defaultParser) scriptHelper(path string, args ...string) string {
 	tttt := "text/javascript"
 	if len(args) > 0 {
 		tttt = args[0]
@@ -545,7 +544,7 @@ func (parser *defaultViewParser) scriptHelper(path string, args ...string) strin
 	return ""
 }
 
-func (parser *defaultViewParser) scriptsHelper() template.HTML {
+func (parser *defaultParser) scriptsHelper() template.HTML {
 	html := ""
 	if len(parser.scripts) > 0 {
 		html = strings.Join(parser.scripts, "\n")

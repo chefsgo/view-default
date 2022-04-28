@@ -1,13 +1,13 @@
 package view_default
 
 import (
-	"github.com/chefsgo/chef"
+	"github.com/chefsgo/view"
 )
 
-func Driver() chef.ViewDriver {
-	return &defaultViewDriver{}
+func Driver() view.Driver {
+	return &defaultDriver{}
 }
 
 func init() {
-	chef.Register("default", Driver())
+	view.Register("default", Driver())
 }
