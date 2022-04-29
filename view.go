@@ -46,7 +46,7 @@ func (driver *defaultDriver) Connect(config view.Config) (view.Connect, error) {
 		config.Right = "%}"
 	}
 	if config.Root == "" {
-		config.Right = "views"
+		config.Right = "asset/views"
 	}
 	if config.Shared == "" {
 		config.Right = "shared"
