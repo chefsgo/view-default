@@ -121,7 +121,7 @@ func (parser *defaultParser) Parse() (string, error) {
 }
 
 func (parser *defaultParser) Layout() (string, error) {
-	bodyText, bodyError := parser.Body(parser.viewbody.View)
+	bodyText, bodyError := parser.Body(parser.viewbody.View, parser.viewbody.Model)
 	if bodyError != nil {
 		return "", bodyError
 	}
