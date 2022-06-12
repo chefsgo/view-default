@@ -83,6 +83,8 @@ func (connect *defaultConnect) Parse(body view.Body) (string, error) {
 }
 
 func (connect *defaultConnect) newDefaultViewParser(body view.Body) *defaultParser {
+	config := connect.config
+
 	parser := &defaultParser{
 		connect: connect, viewbody: body,
 	}
@@ -111,7 +113,7 @@ func (connect *defaultConnect) newDefaultViewParser(body view.Body) *defaultPars
 	helpers["script"] = parser.scriptHelper
 	helpers["scripts"] = parser.scriptsHelper
 
-	parser.engine = template.New("default").Delims(parser.connect.config.Left, parser.connect.config.Right).Funcs(helpers)
+	parser.engine = template.New("default").Delims(config.Left, config.Right).Funcs(helpers)
 
 	return parser
 }
@@ -121,7 +123,10 @@ func (parser *defaultParser) Parse() (string, error) {
 }
 
 func (parser *defaultParser) Layout() (string, error) {
-	bodyText, bodyError := parser.Body(parser.viewbody.View, parser.viewbody.Model)
+	config := parser.connect.config
+	body := parser.viewbody
+
+	bodyText, bodyError := parser.Body(body.View, body.Model)
 	if bodyError != nil {
 		return "", bodyError
 	}
@@ -146,22 +151,25 @@ func (parser *defaultParser) Layout() (string, error) {
 
 		//先搜索layout所在目录
 		viewpaths := []string{}
+
 		if parser.path != "" {
 			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s.html", parser.path, parser.layout))
 		}
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, body.Language, parser.layout))
+		if body.Site != "" {
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", config.Root, body.Site, body.Language, parser.layout))
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/%s.html", config.Root, body.Site, body.Language, config.Shared, parser.layout))
+		}
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, body.Language, parser.layout))
 
-		//加入多语言支持
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, parser.layout))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, parser.connect.config.Shared, parser.layout))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, parser.layout))
-
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.connect.config.Shared, parser.layout))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.layout))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.connect.config.Shared, parser.layout))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s.html", parser.connect.config.Root, parser.layout))
+		if body.Site != "" {
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", config.Root, body.Site, config.Shared, parser.layout))
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, body.Site, parser.layout))
+		}
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, config.Shared, parser.layout))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s.html", config.Root, parser.layout))
 
 		var filename string
-
 		for _, s := range viewpaths {
 			if f, _ := os.Stat(s); f != nil && !f.IsDir() {
 				filename = s
@@ -195,7 +203,7 @@ func (parser *defaultParser) Layout() (string, error) {
 
 	//viewdata
 	data := Map{}
-	for k, v := range parser.viewbody.Data {
+	for k, v := range body.Data {
 		data[k] = v
 	}
 	data["model"] = parser.model
@@ -210,6 +218,9 @@ func (parser *defaultParser) Layout() (string, error) {
 
 /* 返回view */
 func (parser *defaultParser) Body(name string, args ...Any) (string, error) {
+	config := parser.connect.config
+	body := parser.viewbody
+
 	var bodyModel Any
 	if len(args) > 0 {
 		bodyModel = args[0]
@@ -221,24 +232,24 @@ func (parser *defaultParser) Body(name string, args ...Any) (string, error) {
 		bodyHtml = name
 	} else {
 
-		//定义View搜索的路径
-		viewpaths := []string{
-			//加入多语言支持
-			fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, name),
-			fmt.Sprintf("%s/%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.connect.config.Shared, parser.viewbody.Language, name),
-			fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, name),
-			fmt.Sprintf("%s/%s/%s/index.html", parser.connect.config.Root, parser.viewbody.Language, name),
-			fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, parser.connect.config.Shared, name),
-			fmt.Sprintf("%s/%s/%s/%s/index.html", parser.connect.config.Root, parser.viewbody.Language, parser.connect.config.Shared, name),
-
-			fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, name),
-			fmt.Sprintf("%s/%s/%s/index.html", parser.connect.config.Root, parser.viewbody.Site, name),
-			fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.connect.config.Shared, name),
-			fmt.Sprintf("%s/%s.html", parser.connect.config.Root, name),
-			fmt.Sprintf("%s/%s/index.html", parser.connect.config.Root, name),
-			fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.connect.config.Shared, name),
-			fmt.Sprintf("%s/%s/%s/index.html", parser.connect.config.Root, parser.connect.config.Shared, name),
+		viewpaths := []string{}
+		if body.Site != "" {
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", config.Root, body.Site, body.Language, name))
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/%s.html", config.Root, body.Site, config.Shared, body.Language, name))
 		}
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, body.Language, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/index.html", config.Root, body.Language, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", config.Root, body.Language, config.Shared, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/index.html", config.Root, body.Language, config.Shared, name))
+		if body.Site != "" {
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, body.Site, name))
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/index.html", config.Root, body.Site, name))
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", config.Root, body.Site, config.Shared, name))
+		}
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s.html", config.Root, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/index.html", config.Root, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, config.Shared, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/index.html", config.Root, config.Shared, name))
 
 		var filename string
 		for _, s := range viewpaths {
@@ -249,18 +260,20 @@ func (parser *defaultParser) Body(name string, args ...Any) (string, error) {
 				break
 			}
 		}
+
 		//如果view不存在
 		if filename == "" {
 			return "", errors.New(fmt.Sprintf("view %s not exist", name))
 		}
 
+		viewName = path.Base(filename)
+
 		//读文件
 		bytes, err := ioutil.ReadFile(filename)
 		if err != nil {
-			return "", errors.New(fmt.Sprintf("layout %s read error", parser.layout))
+			return "", errors.New(fmt.Sprintf("view %s read error", viewName))
 		}
 
-		viewName = path.Base(filename)
 		bodyHtml = string(bytes)
 	}
 
@@ -276,7 +289,7 @@ func (parser *defaultParser) Body(name string, args ...Any) (string, error) {
 
 	//viewdata
 	data := Map{}
-	for k, v := range parser.viewbody.Data {
+	for k, v := range body.Data {
 		data[k] = v
 	}
 	data["model"] = bodyModel
@@ -292,6 +305,8 @@ func (parser *defaultParser) Body(name string, args ...Any) (string, error) {
 
 /* 返回view */
 func (parser *defaultParser) Render(name string, args ...Any) (string, error) {
+	config := parser.connect.config
+	body := parser.viewbody
 
 	var renderModel Any
 	if len(args) > 0 {
@@ -305,21 +320,24 @@ func (parser *defaultParser) Render(name string, args ...Any) (string, error) {
 		viewName = chef.Generate()
 		renderHtml = name
 	} else {
+
 		//先搜索body所在目录
 		viewpaths := []string{}
 		if parser.path != "" {
 			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s.html", parser.path, name))
 		}
-		//加入多语言支持
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, parser.connect.config.Shared, name))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.viewbody.Language, name))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, parser.connect.config.Shared, name))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Language, name))
-
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, parser.connect.config.Shared, name))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.viewbody.Site, name))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", parser.connect.config.Root, parser.connect.config.Shared, name))
-		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s.html", parser.connect.config.Root, name))
+		if body.Site != "" {
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s/%s.html", config.Root, body.Site, body.Language, config.Shared, name))
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", config.Root, body.Site, body.Language, name))
+		}
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", config.Root, body.Language, config.Shared, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, body.Language, name))
+		if body.Site != "" {
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s/%s.html", config.Root, body.Site, config.Shared, name))
+			viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, body.Site, name))
+		}
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s/%s.html", config.Root, config.Shared, name))
+		viewpaths = append(viewpaths, fmt.Sprintf("%s/%s.html", config.Root, name))
 
 		var filename string
 		for _, s := range viewpaths {
@@ -369,7 +387,7 @@ func (parser *defaultParser) Render(name string, args ...Any) (string, error) {
 
 	//viewdata
 	data := Map{}
-	for k, v := range parser.viewbody.Data {
+	for k, v := range body.Data {
 		data[k] = v
 	}
 	data["model"] = renderModel
